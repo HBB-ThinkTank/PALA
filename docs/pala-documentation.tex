@@ -1,0 +1,186 @@
+\documentclass{article}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage[utf8]{inputenc}
+\usepackage{xcolor}
+
+\lstdefinelanguage{json}{
+    basicstyle=\ttfamily,
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    morestring=[b]",
+    morecomment=[l]{//},
+    moredelim=[l]{:},
+}
+
+
+\title{PALA - Python Audio Loudness Analysis}
+\author{HBB-ThinkTank}
+\date{February 2025}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\section{Introduction}
+PALA (Python Audio Loudness Analysis) is a Python package designed for loudness analysis of audio files. It aims to compute LUFS values, as well as other relevant loudness metrics such as RMS, Peak, True Peak, LRA, DR, and frequency distributions.
+
+\section{Motivation and Objectives}
+The primary goal of PALA is to provide a comprehensive analysis tool for measuring audio loudness within Python, integrating various measurement methods into a single package.
+
+\section{Planned Metrics}
+PALA is designed to compute the following loudness metrics:
+\begin{itemize}
+    \item \textbf{LUFS (Loudness Units Full Scale)}
+    \begin{itemize}
+        \item Momentary LUFS (M) - computed over a 400-ms window
+        \item Short-Term LUFS (S) - computed over a 3-second window
+        \item Integrated LUFS (I) - measured over the entire file
+    \end{itemize}
+    \item \textbf{Other Loudness Metrics}
+    \begin{itemize}
+        \item RMS (Root Mean Square)
+        \item Peak (Sample Peak Level, dBFS)
+        \item True Peak (Interpolated Peak Value)
+        \item LRA (Loudness Range, LU)
+        \item PLR (Peak-to-Loudness Ratio, dB)
+        \item DR (Dynamic Range, dB)
+        \item Frequency Distribution Analysis
+    \end{itemize}
+\end{itemize}
+
+\section{Technical Implementation}
+PALA follows a modular structure with the following core components:
+\begin{lstlisting}[language=bash]
+pala/
+|--- __init__.py
+|--- analysis.py  # Main analysis functions
+|--- lufs.py  # LUFS calculations
+|--- dynamics.py  # RMS, Peak, True Peak, PLR, DR
+|--- frequency.py  # Frequency analysis
+|--- utils.py  # Utility functions
+|--- io.py  # File handling
+
+tests/
+|--- test_analysis.py
+|--- test_lufs.py
+|--- test_dynamics.py
+|--- test_frequency.py
+\end{lstlisting}
+
+\section{Available Functions in dynamics.py}
+The `dynamics.py` module provides various functions for analyzing dynamic properties of audio files. These functions are available in two forms: one using a waveform array as input and another accepting a file path as input.
+
+\subsection{Functions using waveform as input}
+\begin{itemize}
+    \item \textbf{compute\_rms\_aes(waveform)} - Computes RMS level using the AES standard.
+    \item \textbf{compute\_rms\_itu(waveform)} - Computes RMS level using the ITU-R BS.1770 standard.\footnote{The accuracy of this function has not been fully tested due to the lack of reference audio files and validated implementations.}
+    \item \textbf{compute\_peak(waveform)} - Determines the sample peak level in dBFS.
+    \item \textbf{compute\_true\_peak(waveform)} - Computes the true peak value using oversampling.
+    \item \textbf{compute\_dynamics(waveform, norm)} - Computes various dynamic range metrics, such as DR, Crest Factor, and Headroom.
+\end{itemize}
+
+\subsection{Functions using file path as input}
+\begin{itemize}
+    \item \textbf{compute\_rms\_aes\_load(filepath)} - Computes AES RMS level from an audio file.
+    \item \textbf{compute\_rms\_itu\_load(filepath)} - Computes ITU RMS level from an audio file.
+    \item \textbf{compute\_peak\_load(filepath)} - Determines the sample peak level from an audio file.
+    \item \textbf{compute\_true\_peak\_load(filepath)} - Computes the true peak level from an audio file.
+    \item \textbf{compute\_dynamics\_load(filepath)} - Computes dynamic range metrics from an audio file.
+\end{itemize}
+
+\subsection{Function Aliases}
+For convenience, the following alternative function names (aliases) are provided:
+\begin{itemize}
+    \item \textbf{rmsaes} → compute\_rms\_aes
+    \item \textbf{rmsitu} → compute\_rms\_itu
+    \item \textbf{peak} → compute\_peak
+    \item \textbf{true\_peak} → compute\_true\_peak
+    \item \textbf{dynamics} → compute\_dynamics
+    \item \textbf{lrmsaes} → compute\_rms\_aes\_load
+    \item \textbf{lrmsitu} → compute\_rms\_itu\_load
+    \item \textbf{lpeak} → compute\_peak\_load
+    \item \textbf{ltrue\_peak} → compute\_true\_peak\_load
+    \item \textbf{ldynamics} → compute\_dynamics\_load
+\end{itemize}
+
+Additionally, pre-configured versions for specific norms are available:
+\begin{itemize}
+    \item \textbf{dynaes} → compute\_dynamics(norm='aes')
+    \item \textbf{dynitu} → compute\_dynamics(norm='itu')
+    \item \textbf{ldynaes} → compute\_dynamics\_load(norm='aes')
+    \item \textbf{ldynitu} → compute\_dynamics\_load(norm='itu')
+\end{itemize}
+
+\section{Data Storage Format}
+PALA uses JSON as the primary format for storing analysis results:
+\begin{lstlisting}[language=json]
+{
+ "filename": "track1.wav",
+ "lufs": {
+ "momentary": [-18.5, -17.8, ...],
+ "short_term": [-17.0, -16.5, ...],
+ "integrated": -16.0
+ },
+ "rms": -15.5,
+ "true_peak": -2.3,
+ "plr": 13.7,
+ "dr": 10.2,
+ "lra": 5.8,
+ "frequency_analysis": {
+ "low": -12.3,
+ "mid": -10.5,
+ "high": -9.2
+ }
+}
+\end{lstlisting}
+Other formats such as CSV and YAML might also be supported in future updates.
+
+\section{Integration of Equal-Loudness Contours}
+Fletcher-Munson curves are used as references for frequency weighting, enabling calculation of LUFS values for specific frequency bands.
+
+\section{Licensing and Open-Source Strategy}
+PALA is released under the MIT License, encouraging open-source contributions and public use.
+
+\section{Publication Strategy}
+\subsection{GitHub Repository}
+The project is hosted on GitHub under HBB-ThinkTank/PALA. The repository contains:
+\begin{itemize}
+    \item \texttt{.gitignore}
+    \item \texttt{pala/\_\_init\_\_.py}
+    \item \texttt{pala/analysis.py}
+    \item \texttt{pyproject.toml}
+    \item \texttt{setup.cfg}
+\end{itemize}
+Versioning is managed using Git tags.
+
+\subsection{PyPI Package Deployment}
+To build and upload the package:
+\begin{lstlisting}[language=bash]
+python -m build
+python -m pip cache purge
+rmdir /s /q build dist pala.egg-info
+
+# Upload to PyPI
+twine upload --repository pala dist/*
+\end{lstlisting}
+
+\section{Future Steps}
+\begin{itemize}
+    \item Implement LUFS calculations.
+    \item Conduct tests with real audio files.
+    \item Finalize the first stable release (0.1.0).
+    \item Integrate additional metrics such as PLR, DR, and LRA.
+    \item Incorporate equal-loudness contours.
+    \item Publish the package on PyPI and engage with the open-source community.
+\end{itemize}
+
+\end{document}
