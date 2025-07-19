@@ -4,18 +4,41 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PALA"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python Audio Loudness Analysis"
 readme = "README.md"
-authors = [{ name = "HBB-ThinkTank", email = "your-email@example.com" }]
+requires-python = ">=3.8"
+
+authors = [
+    { name = "HBB-ThinkTank", email = "your-email@example.com" }
+]
+
 license = { text = "MIT" }
-requires-python = ">=3.7"
+
+keywords = ["audio", "loudness", "LUFS", "ITU-R BS.1770", "true peak", "RMS", "analysis"]
+
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Operating System :: OS Independent"
+]
+
+dependencies = [
+    "numpy >= 1.24",
+    "scipy >= 1.10",
+    "soundfile >= 0.12",
+    "soxr >= 0.5",
+    "numba >= 0.56"
 ]
 
 [project.urls]
 Homepage = "https://github.com/HBB-ThinkTank/PALA"
 Repository = "https://github.com/HBB-ThinkTank/PALA"
+Issues = "https://github.com/HBB-ThinkTank/PALA/issues"
