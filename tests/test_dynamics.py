@@ -17,10 +17,11 @@ waveform, sample_rate = dynamics.load_audio(AUDIO_FILE)
 
 # Compute values
 rms_aes_value = dynamics.compute_rms_aes(waveform)
-rms_itu_value = dynamics.compute_rms_itu(waveform)
+rms_itu_value = dynamics.compute_rms_itu(waveform, sample_rate)
 peak_value = dynamics.compute_peak(waveform)
 true_peak_value = dynamics.compute_true_peak(waveform)
 dynamics_values = dynamics.compute_dynamics(waveform)
+lra_values = dynamics.compute_lra(waveform, sample_rate)
 
 # Compute values directly from file
 rms_aes_file = dynamics.compute_rms_aes_load(AUDIO_FILE)
@@ -28,6 +29,7 @@ rms_itu_file = dynamics.compute_rms_itu_load(AUDIO_FILE)
 peak_file = dynamics.compute_peak_load(AUDIO_FILE)
 true_peak_file = dynamics.compute_true_peak_load(AUDIO_FILE)
 dynamics_file = dynamics.compute_dynamics_load(AUDIO_FILE)
+lra_file = dynamics.compute_lra_load(AUDIO_FILE)
 
 # Print results from waveform
 print("--- Results from waveform ---")
@@ -38,6 +40,7 @@ print(f"True Peak Level: {true_peak_value:.2f} dBFS")
 print(f"Dynamic Range (DR): {dynamics_values['DR']:.2f} dB")
 print(f"Crest Factor: {dynamics_values['Crest Factor']:.2f} dB")
 print(f"Headroom: {dynamics_values['Headroom']:.2f} dB")
+print(f"LRA: {lra_values:.2f} LU")
 
 # Print results from direct file processing
 print("\n--- Results from direct file processing ---")
@@ -48,3 +51,4 @@ print(f"True Peak Level: {true_peak_file:.2f} dBFS")
 print(f"Dynamic Range (DR): {dynamics_file['DR']:.2f} dB")
 print(f"Crest Factor: {dynamics_file['Crest Factor']:.2f} dB")
 print(f"Headroom: {dynamics_file['Headroom']:.2f} dB")
+print(f"LRA: {lra_file:.2f} LU")

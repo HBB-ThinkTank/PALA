@@ -1,53 +1,13 @@
-import librosa
+# import librosa
 import numpy as np
-import soundfile as sf
+# import soundfile as sf
 import scipy.signal as signal
-from scipy.signal import lfilter
-import matplotlib.pyplot as plt
-import pyloudnorm as pln
-import subprocess
-import os
+from scipy.signal import lfilter, resample_poly
+# import subprocess
+# import os
 from typing import Tuple, Optional
-from utils import process_in_chunks
+from utils import process_in_chunks, apply_k_weighting_filter, load_audio
 from functools import partial
-
-
-def load_audio(filepath: str, sr: int = None, ffmpeg_path: Optional[str] = None) -> Tuple[np.ndarray, int]:
-    """
-    Loads an audio file and returns the waveform and sample rate. If the format is not natively supported,
-    it attempts to convert it to WAV using FFmpeg.
-    
-    :param filepath: Path to the audio file.
-    :param sr: Target sample rate (if None, original sample rate is used).
-    :param ffmpeg_path: Optional path to ffmpeg.exe if it's not in the system PATH.
-    :return: Tuple (waveform, sample rate)
-    """
-    try:
-        waveform, sample_rate = sf.read(filepath, always_2d=True)
-        return waveform, sample_rate
-    except Exception as e:
-        print(f"soundfile could not load the file: {e}. Trying librosa as fallback...")
-        try:
-            waveform, sample_rate = librosa.load(filepath, sr=sr, backend="soundfile")
-            return waveform, sample_rate
-        except Exception as e_librosa:
-            print(f"Librosa also failed: {e_librosa}")
-        
-        if ffmpeg_path:
-            ffmpeg_cmd = ffmpeg_path
-        else:
-            ffmpeg_cmd = "ffmpeg"
-        
-        temp_wav = filepath + ".wav"
-        try:
-            subprocess.run([ffmpeg_cmd, "-i", filepath, "-ar", "44100", "-ac", "2", "-y", temp_wav], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            waveform, sample_rate = sf.read(temp_wav, always_2d=True)
-            os.remove(temp_wav)
-            return waveform, sample_rate
-        except FileNotFoundError:
-            raise RuntimeError("FFmpeg not found. Ensure that ffmpeg is installed and available in the system PATH, or specify its path explicitly via the ffmpeg_path parameter.")
-        except Exception as ffmpeg_error:
-            raise RuntimeError(f"FFmpeg conversion failed: {ffmpeg_error}")
 
 
 def compute_rms_aes(waveform: np.ndarray, db: bool = True) -> float:
@@ -66,7 +26,7 @@ def compute_rms_aes(waveform: np.ndarray, db: bool = True) -> float:
     return 20 * np.log10(rms) if db and rms > 0 else rms
 
 
-def compute_rms_itu(waveform: np.ndarray, db: bool = True) -> float:
+def compute_rms_itu(waveform: np.ndarray, sample_rate: int, db: bool = True) -> float:
     """
     Computes the RMS level using the ITU-R BS.1770 standard (LUFS-like measurement) with chunk processing.
     
@@ -74,42 +34,9 @@ def compute_rms_itu(waveform: np.ndarray, db: bool = True) -> float:
     :param db: If True, returns values in dBFS, else in linear scale.
     :return: RMS value in dBFS or linear scale.
     """
-    sample_rate = 44100  # Default sample rate assumption
 
-    # Compute K-Weighting filter coefficients (ITU-R BS.1770)
-    def compute_k_filter_coefficients(fs):
-        f0_hp = 38.13547087613982
-        Q_hp = 0.5003270373253953
-        w0_hp = 2 * np.pi * f0_hp / fs
-        alpha_hp = np.sin(w0_hp) / (2 * Q_hp)
+    waveform = apply_k_weighting_filter(waveform, sample_rate)
 
-        b_hp = [1 + alpha_hp, -2 * np.cos(w0_hp), 1 - alpha_hp]
-        a_hp = [1 + alpha_hp, -2 * np.cos(w0_hp), 1 - alpha_hp]
-
-        f0_shelving = 1681.9744509555319
-        Q_shelving = 0.7071752369554193
-        A_shelving = 10**(4.0 / 40)
-        w0_shelving = 2 * np.pi * f0_shelving / fs
-        alpha_shelving = np.sin(w0_shelving) / (2 * Q_shelving)
-
-        b_shelving = [
-            A_shelving * ((A_shelving + 1) + (A_shelving - 1) * np.cos(w0_shelving) + 2 * np.sqrt(A_shelving) * alpha_shelving),
-            -2 * A_shelving * ((A_shelving - 1) + (A_shelving + 1) * np.cos(w0_shelving)),
-            A_shelving * ((A_shelving + 1) + (A_shelving - 1) * np.cos(w0_shelving) - 2 * np.sqrt(A_shelving) * alpha_shelving)
-        ]
-        a_shelving = [
-            (A_shelving + 1) - (A_shelving - 1) * np.cos(w0_shelving) + 2 * np.sqrt(A_shelving) * alpha_shelving,
-            2 * ((A_shelving - 1) - (A_shelving + 1) * np.cos(w0_shelving)),
-            (A_shelving + 1) - (A_shelving - 1) * np.cos(w0_shelving) - 2 * np.sqrt(A_shelving) * alpha_shelving
-        ]
-        return b_hp, a_hp, b_shelving, a_shelving
-
-    b_hp, a_hp, b_shelving, a_shelving = compute_k_filter_coefficients(sample_rate)
-    
-    # Apply K-weighting filters
-    waveform = signal.lfilter(b_hp, a_hp, waveform, axis=0)
-    waveform = signal.lfilter(b_shelving, a_shelving, waveform, axis=0)
-    
     # Process in chunks with 50% Overlapping
     chunk_size = int(0.4 * sample_rate)  # 400 ms window
     hop_size = chunk_size // 2  # 50% Overlapping
@@ -129,7 +56,6 @@ def compute_rms_itu(waveform: np.ndarray, db: bool = True) -> float:
     
     return rms
 
-
 def compute_peak(waveform: np.ndarray, db: bool = True) -> float:
     """
     Computes the Peak Level using the loudest channel.
@@ -146,7 +72,7 @@ def compute_peak(waveform: np.ndarray, db: bool = True) -> float:
     return 20 * np.log10(peak) if db and peak > 0 else peak
 
 
-def compute_true_peak(waveform: np.ndarray, oversample_factor: int = 4, db: bool = True) -> float:
+def compute_true_peak_old(waveform: np.ndarray, oversample_factor: int = 4, db: bool = True) -> float:
     """
     Computes the True Peak Level using oversampling.
     
@@ -160,8 +86,38 @@ def compute_true_peak(waveform: np.ndarray, oversample_factor: int = 4, db: bool
     true_peak = np.max(np.abs(oversampled_waveform))
     return 20 * np.log10(true_peak) if db and true_peak > 0 else true_peak
 
+def compute_true_peak(waveform: np.ndarray, oversample_factor: int = 4, db: bool = True) -> float:
+    """
+    Computes the True Peak level of an audio file in dBTP using oversampling.
 
-def compute_dynamics(waveform: np.ndarray, db: bool = True, norm: str = 'aes') -> dict:
+    Parameters:
+        waveform : str
+            Audio signal as a NumPy array.
+        oversample_factor    : int
+            Oversampling factor (commonly 4 or 8).
+        db : bool
+            If True, returns values in dBTP, else in linear scale.
+
+    Returns:
+        float : True Peak value in dBTP (decibels relative to full scale) or linear scale.
+    """
+
+    # Ensure 2D shape: (samples, channels)
+    if waveform.ndim == 1:
+        waveform = waveform[:, np.newaxis]
+
+    true_peaks = []
+    for ch in range(waveform.shape[1]):
+        # Resample with polyphase filtering
+        upsampled = resample_poly(waveform[:, ch], oversample_factor, 1)
+        peak = np.max(np.abs(upsampled))
+        true_peaks.append(peak)
+
+    max_peak = max(true_peaks)
+    return 20 * np.log10(max_peak) if db and max_peak > 0 else max_peak
+
+
+def compute_dynamics(waveform: np.ndarray, sample_rate: int = 44100, db: bool = True, norm: str = 'aes') -> dict:
     """
     Computes dynamic range metrics using either AES RMS or ITU-R BS.1770 RMS.
 
@@ -176,7 +132,7 @@ def compute_dynamics(waveform: np.ndarray, db: bool = True, norm: str = 'aes') -
         raise ValueError("Invalid norm type. Use 'aes' for unweighted RMS or 'itu' for ITU-R BS.1770 K-weighted RMS.")
 
     # Select RMS computation based on norm
-    rms = compute_rms_aes(waveform, db=db) if norm == 'aes' else compute_rms_itu(waveform, db=db)
+    rms = compute_rms_aes(waveform, db=db) if norm == 'aes' else compute_rms_itu(waveform, sample_rate, db=db)
 
     # Compute peak values
     peak = compute_peak(waveform, db=db)
@@ -198,6 +154,46 @@ def compute_dynamics(waveform: np.ndarray, db: bool = True, norm: str = 'aes') -
         "Headroom": headroom
     }
 
+def compute_lra(waveform: np.ndarray, sample_rate: int) -> float:
+    """
+    Computes the Loudness Range (LRA) from short-term LUFS values (3s windows).
+
+    Parameters:
+        waveform : np.ndarray
+            Mono or summed K-weighted signal
+        sample_rate : int
+            Sample rate in Hz
+
+    Returns:
+        float : Loudness Range (LRA) in LU
+    """
+    # Apply K-weighting
+    waveform = apply_k_weighting_filter(waveform, sample_rate)
+
+    # Reduce to mono if multichannel
+    if waveform.ndim == 2:
+        waveform = np.mean(waveform, axis=1)
+
+    window_ms = 3000
+    chunk_size = int(sample_rate * window_ms / 1000)
+    hop_size = int(chunk_size * 0.25)  # 75% overlap
+
+    lufs_values = []
+    for start in range(0, len(waveform) - chunk_size + 1, hop_size):
+        chunk = waveform[start:start + chunk_size]
+        ms = np.mean(chunk ** 2)
+        if ms > 1e-7:  # Apply absolute gate (-70 LUFS)
+            lufs = -0.691 + 10 * np.log10(ms)
+            lufs_values.append(lufs)
+
+    if len(lufs_values) < 2:
+        return 0.0  # Not enough data to compute range
+
+    lufs_array = np.array(lufs_values)
+    lower = np.percentile(lufs_array, 10)
+    upper = np.percentile(lufs_array, 95)
+
+    return upper - lower
 
 
 def compute_rms_aes_load(filepath: str, sr: int = None, db: bool = True, ffmpeg_path: Optional[str] = None) -> float:
@@ -206,8 +202,8 @@ def compute_rms_aes_load(filepath: str, sr: int = None, db: bool = True, ffmpeg_
 
 
 def compute_rms_itu_load(filepath: str, sr: int = None, db: bool = True, ffmpeg_path: Optional[str] = None) -> float:
-    waveform, _ = load_audio(filepath, sr=sr, ffmpeg_path=ffmpeg_path)
-    return compute_rms_itu(waveform, db=db)
+    waveform, sample_rate = load_audio(filepath, sr=sr, ffmpeg_path=ffmpeg_path)
+    return compute_rms_itu(waveform, sample_rate, db=db)
 
 
 def compute_peak_load(filepath: str, sr: int = None, db: bool = True, ffmpeg_path: Optional[str] = None) -> float:
@@ -221,8 +217,12 @@ def compute_true_peak_load(filepath: str, sr: int = None, oversample_factor: int
 
 
 def compute_dynamics_load(filepath: str, sr: int = None, db: bool = True, ffmpeg_path: Optional[str] = None) -> dict:
-    waveform, _ = load_audio(filepath, sr=sr, ffmpeg_path=ffmpeg_path)
-    return compute_dynamics(waveform, db=db)
+    waveform, sample_rate = load_audio(filepath, sr=sr, ffmpeg_path=ffmpeg_path)
+    return compute_dynamics(waveform, sample_rate, db=db)
+    
+def compute_lra_load(filepath: str, sr: int = None, ffmpeg_path: Optional[str] = None) -> float:
+    waveform, sample_rate = load_audio(filepath, sr=sr, ffmpeg_path=ffmpeg_path)
+    return compute_lra(waveform, sample_rate)
 
 
 # Define alternative short aliases only for external usage
@@ -237,6 +237,7 @@ lrmsitu = compute_rms_itu_load
 lpeak = compute_peak_load
 ltrue_peak = compute_true_peak_load
 ldynamics = compute_dynamics_load
+lra = compute_lra
 
 # Funktionen mit vordefinierten Parametern (Aliases mit fixem `norm`)
 dynaes = partial(compute_dynamics, norm='aes')
@@ -258,11 +259,14 @@ if __name__ == "__main__":
     rms = compute_rms(waveform)
     peak = compute_peak(waveform)
     true_peak = compute_true_peak(waveform)
-    dynamics = compute_dynamics(rms, peak, true_peak)
+    dynamics_result = compute_dynamics(waveform, sr)
+    lra = compute_lra(waveform)
     
     print(f"RMS Level: {rms:.2f} dBFS")
     print(f"Peak Level: {peak:.2f} dBFS")
     print(f"True Peak Level: {true_peak:.2f} dBFS")
-    print(f"Dynamic Range (DR): {dynamics['DR']:.2f} dB")
+    print(f"Dynamic Range (DR): {dynamics_result['DR']:.2f} dB")
     print(f"Crest Factor: {dynamics['Crest Factor']:.2f} dB")
     print(f"Headroom: {dynamics['Headroom']:.2f} dB")
+    print(f"Loudness Range: {lra:.2f} LU")
+
